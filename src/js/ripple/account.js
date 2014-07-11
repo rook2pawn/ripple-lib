@@ -10,6 +10,7 @@
 //
 
 // var network = require('./network.js');
+var request            = require('request');
 var async              = require('async');
 var util               = require('util');
 var extend             = require('extend');
@@ -133,6 +134,20 @@ Account.prototype.isValid = function() {
 
 Account.prototype.getInfo = function(callback) {
   return this._remote.request_account_info(this._account_id, callback);
+};
+
+
+Account.prototype.getInfo_RPC = function(callback) {
+  request.post({url:'http://s1.ripple.com:51234',json:{
+    method:'account_info'
+    params: [{'account':this._account_id}]
+  }},function(err, resp, body) {
+    if (body.error) {
+        callback({remote:{error:body.result.error}}
+    } else {
+        callback(body.result)
+    }
+  })
 };
 
 /**
@@ -315,7 +330,7 @@ Account.prototype.publicKeyIsActive = function(public_key, callback) {
   }
 
   function getAccountInfo(async_callback) {
-    self.getInfo(function(err, account_info_res){
+    self.getInfo_RPC(function(err, account_info_res){
 
       // If the remote responds with an Account Not Found error then the account
       // is unfunded and thus we can assume that the master key is active
