@@ -95,6 +95,16 @@ Message.signHash = function(hash, secret_key, account) {
  *  @param {Error} error
  *  @param {boolean} is_valid true if the signature is valid, false otherwise
  */
+Message.verifyMessageSignature_RPC = function(data, callback) {
+  if (typeof data.message === 'string') {
+    data.hash = Message.HASH_FUNCTION(Message.MAGIC_BYTES + data.message);
+  } else {
+    return callback(new Error('Data object must contain message field to verify signature'));
+  }
+
+  return Message.verifyHashSignature_RPC(data, callback);
+}
+
 Message.verifyMessageSignature = function(data, remote, callback) {
 
   if (typeof data.message === 'string') {
@@ -107,6 +117,73 @@ Message.verifyMessageSignature = function(data, remote, callback) {
 
 };
 
+Message.verifyHashSignature_RPC = function(data, callback) {
+
+  var hash,
+    account,
+    signature;
+
+  if(typeof callback !== 'function') {
+    throw new Error('Must supply callback function');
+  }
+
+  hash = data.hash;
+  if (hash && typeof hash === 'string' && REGEX_HEX.test(hash)) {
+    hash = sjcl.codec.hex.toBits(hash);
+  }
+
+  if (typeof hash !== 'object' || hash.length <= 0 || typeof hash[0] !== 'number') {
+    return callback(new Error('Hash must be a bitArray or hex-encoded string'));
+  }
+
+  account = data.account || data.address;
+  if (!account || !UInt160.from_json(account).is_valid()) {
+    return callback(new Error('Account must be a valid ripple address'));
+  }
+
+  signature = data.signature;
+  if (typeof signature !== 'string' || !REGEX_BASE64.test(signature)) {
+    return callback(new Error('Signature must be a Base64-encoded string'));
+  }
+  signature = sjcl.codec.base64.toBits(signature);
+
+  function recoverPublicKey (async_callback) {
+
+    var public_key;
+    try {
+      public_key = sjcl.ecc.ecdsa.publicKey.recoverFromSignature(hash, signature);
+    } catch (err) {
+      return async_callback(err);
+    }
+
+    if (public_key) {
+      async_callback(null, public_key);
+    } else {
+      async_callback(new Error('Could not recover public key from signature'));
+    }
+
+  };
+
+  function checkPublicKeyIsValid (public_key, async_callback) {
+
+    // Get hex-encoded public key
+    var key_pair = new KeyPair();
+    key_pair._pubkey = public_key;
+    var public_key_hex = key_pair.to_hex_pub();
+
+    var account_class_instance = new Account(remote, account);
+    account_class_instance.publicKeyIsActive(public_key_hex, async_callback);
+
+  };
+
+  var steps = [
+    recoverPublicKey,
+    checkPublicKeyIsValid
+  ];
+
+  async.waterfall(steps, callback);
+
+};
 
 /**
  *  Verify the signature on a given hash.
