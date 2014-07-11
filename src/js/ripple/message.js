@@ -95,14 +95,14 @@ Message.signHash = function(hash, secret_key, account) {
  *  @param {Error} error
  *  @param {boolean} is_valid true if the signature is valid, false otherwise
  */
-Message.verifyMessageSignature_RPC = function(data, callback) {
+Message.verifyMessageSignature_RPC = function(data, remote,callback) {
   if (typeof data.message === 'string') {
     data.hash = Message.HASH_FUNCTION(Message.MAGIC_BYTES + data.message);
   } else {
     return callback(new Error('Data object must contain message field to verify signature'));
   }
 
-  return Message.verifyHashSignature_RPC(data, callback);
+  return Message.verifyHashSignature_RPC(data,remote, callback);
 }
 
 Message.verifyMessageSignature = function(data, remote, callback) {
@@ -117,15 +117,11 @@ Message.verifyMessageSignature = function(data, remote, callback) {
 
 };
 
-Message.verifyHashSignature_RPC = function(data, callback) {
+Message.verifyHashSignature_RPC = function(data,remote, callback) {
 
   var hash,
     account,
     signature;
-
-  if(typeof callback !== 'function') {
-    throw new Error('Must supply callback function');
-  }
 
   hash = data.hash;
   if (hash && typeof hash === 'string' && REGEX_HEX.test(hash)) {
