@@ -139,7 +139,7 @@ Account.prototype.getInfo = function(callback) {
 
 Account.prototype.getInfo_RPC = function(callback) {
   request.post({url:'http://s1.ripple.com:51234',json:{
-    method:'account_info'
+    method:'account_info',
     params: [{'account':this._account_id}]
   }},function(err, resp, body) {
     if (body.error) {
