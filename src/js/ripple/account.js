@@ -143,9 +143,9 @@ Account.prototype.getInfo_RPC = function(callback) {
     params: [{'account':this._account_id}]
   }},function(err, resp, body) {
     if (body.error) {
-        callback({remote:{error:body.result.error}}
+        callback({remote:{error:body.result.error}},null)
     } else {
-        callback(body.result)
+        callback(null, body.result)
     }
   })
 };
