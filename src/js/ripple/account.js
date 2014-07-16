@@ -145,7 +145,7 @@ Account.prototype.getInfo_RPC = function(callback) {
     console.log('getInfo_RPC err:', err)
     console.log('getInfo_RPC resp:', body)
     if (body === undefined) {
-        console.log("RPC failure no body", resp.statusCode) 
+        console.log("RPC failure no body", resp) 
         callback({remote:{error:'no response'}},null)
     } else if (body.result.error) {
         callback({remote:{error:body.result.error}},null)
