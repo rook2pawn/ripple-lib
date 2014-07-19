@@ -96,14 +96,14 @@ Message.signHash = function(hash, secret_key, account) {
  *  @param {Error} error
  *  @param {boolean} is_valid true if the signature is valid, false otherwise
  */
-Message.verifyMessageSignature_RPC = function(data, remote,callback) {
+Message.verifyMessageSignature_RPC = function(data,callback) {
   if (typeof data.message === 'string') {
     data.hash = Message.HASH_FUNCTION(Message.MAGIC_BYTES + data.message);
   } else {
     return callback(new Error('Data object must contain message field to verify signature'));
   }
 
-  return Message.verifyHashSignature_RPC(data,remote, callback);
+  return Message.verifyHashSignature_RPC(data,callback);
 }
 
 Message.verifyMessageSignature = function(data, remote, callback) {
@@ -118,7 +118,7 @@ Message.verifyMessageSignature = function(data, remote, callback) {
 
 };
 
-Message.verifyHashSignature_RPC = function(data,remote, callback) {
+Message.verifyHashSignature_RPC = function(data, callback) {
 
   var hash,
     account,
@@ -147,24 +147,6 @@ Message.verifyHashSignature_RPC = function(data,remote, callback) {
   var publicKeyIsActive = function(public_key, callback) {
         var self = this;
         var public_key_as_uint160;
-        var getInfo_RPC = function(callback) {
-          request.post({url:'http://s1.ripple.com:51234',json:{
-            method:'account_info',
-            params: [{'account':this._account_id}]
-          }},function(err, resp, body) {
-            console.log('getInfo_RPC err:', err)
-            console.log('getInfo_RPC resp:', body)
-            if (body === undefined) {
-                console.log("RPC failure no body", resp.statusCode) 
-                callback({remote:{error:'no response'}},null)
-            } else if (body.result.error) {
-                callback({remote:{error:body.result.error}},null)
-            } else {
-                callback(null, body.result)
-            }
-          })
-        };
-
         try {
         public_key_as_uint160 = Account._publicKeyToAddress(public_key);
         } catch (err) {
@@ -174,7 +156,7 @@ Message.verifyHashSignature_RPC = function(data,remote, callback) {
       function getAccountInfo(async_callback) {
           request.post({url:'http://s1.ripple.com:51234',json:{
             method:'account_info',
-            params: [{'account':this._account_id}]
+            params: [{'account':public_key}]
           }},function(err, resp, body) {
             console.log('getInfo_RPC err:', err)
             console.log('getInfo_RPC resp:', body)
