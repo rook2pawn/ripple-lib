@@ -1,3 +1,4 @@
+var request            = require('request');
 var async              = require('async');
 var crypto             = require('crypto');
 var sjcl               = require('./utils').sjcl;
@@ -143,6 +144,93 @@ Message.verifyHashSignature_RPC = function(data,remote, callback) {
   }
   signature = sjcl.codec.base64.toBits(signature);
 
+  var publicKeyIsActive = function(public_key, callback) {
+        var self = this;
+        var public_key_as_uint160;
+        var getInfo_RPC = function(callback) {
+          request.post({url:'http://s1.ripple.com:51234',json:{
+            method:'account_info',
+            params: [{'account':this._account_id}]
+          }},function(err, resp, body) {
+            console.log('getInfo_RPC err:', err)
+            console.log('getInfo_RPC resp:', body)
+            if (body === undefined) {
+                console.log("RPC failure no body", resp.statusCode) 
+                callback({remote:{error:'no response'}},null)
+            } else if (body.result.error) {
+                callback({remote:{error:body.result.error}},null)
+            } else {
+                callback(null, body.result)
+            }
+          })
+        };
+
+        try {
+        public_key_as_uint160 = Account._publicKeyToAddress(public_key);
+        } catch (err) {
+        return callback(err);
+        }
+
+      function getAccountInfo(async_callback) {
+          request.post({url:'http://s1.ripple.com:51234',json:{
+            method:'account_info',
+            params: [{'account':this._account_id}]
+          }},function(err, resp, body) {
+            console.log('getInfo_RPC err:', err)
+            console.log('getInfo_RPC resp:', body)
+            if (body === undefined) {
+                console.log("RPC failure no body", resp.statusCode) 
+                async_callback('no response',null)
+            } else if (body.result.error == 'actNotFound') {
+                async_callback(null, null);
+            } else if (body.result.error !== undefined) {
+                async_callback(body.result.error, null);
+            } else if (err !== undefined) {
+                async_callback(err, null);
+            } else {
+                async_callback(null, body.result)
+            }
+          })
+      };
+
+      function publicKeyIsValid(account_info_res, async_callback) {
+        console.log("publicKeyisvalid args:", arguments)
+        // Catch the case of unfunded accounts
+        if (!account_info_res) {
+
+          if (public_key_as_uint160 === self._account_id) {
+            async_callback(null, true);
+          } else {
+            async_callback(null, false);
+          }
+
+          return;
+        }
+
+        var account_info = account_info_res.account_data;
+
+        // Respond with true if the RegularKey is set and matches the given public key or
+        // if the public key matches the account address and the lsfDisableMaster is not set
+        if (account_info.RegularKey &&
+          account_info.RegularKey === public_key_as_uint160) {
+          async_callback(null, true);
+        } else if (account_info.Account === public_key_as_uint160 &&
+          ((account_info.Flags & 0x00100000) === 0)) {
+          async_callback(null, true);
+        } else {
+          async_callback(null, false);
+        }
+      };
+
+      var steps = [
+        getAccountInfo,
+        publicKeyIsValid
+      ];
+
+      async.waterfall(steps, callback);
+   };
+
+
   function recoverPublicKey (async_callback) {
 
     var public_key;
@@ -167,8 +255,7 @@ Message.verifyHashSignature_RPC = function(data,remote, callback) {
     key_pair._pubkey = public_key;
     var public_key_hex = key_pair.to_hex_pub();
 
-    var account_class_instance = new Account(remote, account);
-    account_class_instance.publicKeyIsActive(public_key_hex, async_callback);
+    publicKeyIsActive(public_key_hex,async_callback)
 
   };
 
