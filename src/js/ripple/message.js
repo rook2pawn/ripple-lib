@@ -119,6 +119,7 @@ Message.verifyMessageSignature = function(data, remote, callback) {
 };
 
 Message.verifyHashSignature_RPC = function(data, callback) {
+console.log("verifyHashSignature_RPC:",data)
 
   var hash,
     account,
@@ -152,11 +153,14 @@ Message.verifyHashSignature_RPC = function(data, callback) {
         } catch (err) {
         return callback(err);
         }
+      var _account = UInt160.from_json(account);
+      var _account_id = _account.to_json();
+
 
       function getAccountInfo(async_callback) {
           request.post({url:'http://s1.ripple.com:51234',json:{
             method:'account_info',
-            params: [{'account':public_key}]
+            params: [{'account':_account_id}]
           }},function(err, resp, body) {
             console.log('getInfo_RPC err:', err)
             console.log('getInfo_RPC resp:', body)
@@ -164,12 +168,16 @@ Message.verifyHashSignature_RPC = function(data, callback) {
                 console.log("RPC failure no body", resp.statusCode) 
                 async_callback('no response',null)
             } else if (body.result.error == 'actNotFound') {
+                console.log("RPC actNotFound")
                 async_callback(null, null);
             } else if (body.result.error !== undefined) {
+                console.log("RPC result.error not undefined")
                 async_callback(body.result.error, null);
-            } else if (err !== undefined) {
+            } else if (err) {
+                console.log("RPC err not undefined")
                 async_callback(err, null);
             } else {
+                console.log("sending out null, body.result")
                 async_callback(null, body.result)
             }
           })
@@ -180,7 +188,7 @@ Message.verifyHashSignature_RPC = function(data, callback) {
         // Catch the case of unfunded accounts
         if (!account_info_res) {
 
-          if (public_key_as_uint160 === self._account_id) {
+          if (public_key_as_uint160 === _account_id) {
             async_callback(null, true);
           } else {
             async_callback(null, false);
@@ -343,3 +351,4 @@ Message.verifyHashSignature = function(data, remote, callback) {
 };
 
 exports.Message = Message;
+
