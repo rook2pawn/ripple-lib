@@ -10,7 +10,6 @@
 //
 
 // var network = require('./network.js');
-var request            = require('request');
 var async              = require('async');
 var util               = require('util');
 var extend             = require('extend');
