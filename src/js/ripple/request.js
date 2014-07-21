@@ -11,12 +11,19 @@ var Server       = require('./server').Server;
 //  'remoteError'
 //  'remoteUnexpected'
 //  'remoteDisconnected'
+
+/**
+ * Request
+ *
+ * @param {Remote} remote
+ * @param {String} command
+ */
+
 function Request(remote, command) {
   EventEmitter.call(this);
 
   this.remote = remote;
   this.requested = false;
-
   this.message = {
     command: command,
     id: void(0)
@@ -31,15 +38,15 @@ Request.prototype.broadcast = function() {
 };
 
 // Send the request to a remote.
-Request.prototype.request = function(remote) {
+Request.prototype.request = function(callback) {
   if (this.requested) {
-    return;
+    return this;
   }
 
   this.requested = true;
 
   this.on('error', function(){});
-  this.emit('request', remote);
+  this.emit('request', this.remote);
 
   if (this._broadcast) {
     this.remote._servers.forEach(function(server) {
@@ -50,13 +57,15 @@ Request.prototype.request = function(remote) {
     this.remote.request(this);
   }
 
+  this.callback(callback);
+
   return this;
 };
 
 Request.prototype.callback = function(callback, successEvent, errorEvent) {
   var self = this;
 
-  if (this.requested || typeof callback !== 'function') {
+  if (typeof callback !== 'function') {
     return this;
   }
 
@@ -275,6 +284,7 @@ Request.prototype.rippleState = function(account, issuer, currency) {
   return this;
 };
 
+Request.prototype.setAccounts =
 Request.prototype.accounts = function(accounts, proposed) {
   if (!Array.isArray(accounts)) {
     accounts = [ accounts ];
@@ -295,9 +305,14 @@ Request.prototype.accounts = function(accounts, proposed) {
 };
 
 Request.prototype.addAccount = function(account, proposed) {
+  if (Array.isArray(account)) {
+    account.forEach(this.addAccount, this);
+    return this;
+  }
+
   var processedAccount = UInt160.json_rewrite(account);
 
-  if (proposed) {
+  if (proposed === true) {
     this.message.accounts_proposed = (this.message.accounts_proposed || []).concat(processedAccount);
   } else {
     this.message.accounts = (this.message.accounts || []).concat(processedAccount);
@@ -306,15 +321,22 @@ Request.prototype.addAccount = function(account, proposed) {
   return this;
 };
 
+Request.prototype.setAccountsProposed =
 Request.prototype.rtAccounts =
 Request.prototype.accountsProposed = function(accounts) {
   return this.accounts(accounts, true);
 };
 
 Request.prototype.addAccountProposed = function(account) {
+  if (Array.isArray(account)) {
+    account.forEach(this.addAccountProposed, this);
+    return this;
+  }
+
   return this.addAccount(account, true);
 };
 
+Request.prototype.setBooks =
 Request.prototype.books = function(books, snapshot) {
   // Reset list of books (this method overwrites the current list)
   this.message.books = [ ];
@@ -328,8 +350,9 @@ Request.prototype.books = function(books, snapshot) {
 };
 
 Request.prototype.addBook = function(book, snapshot) {
-  if (!Array.isArray(this.message.books)) {
-    this.message.books = [ ];
+  if (Array.isArray(book)) {
+    book.forEach(this.addBook, this);
+    return this;
   }
 
   var json = { };
@@ -340,7 +363,7 @@ Request.prototype.addBook = function(book, snapshot) {
     }
 
     var obj = json[side] = {
-      currency: Currency.json_rewrite(book[side].currency, {force_hex: true})
+      currency: Currency.json_rewrite(book[side].currency, { force_hex: true })
     };
 
     if (!Currency.from_json(obj.currency).is_native()) {
@@ -350,15 +373,54 @@ Request.prototype.addBook = function(book, snapshot) {
 
   [ 'taker_gets', 'taker_pays' ].forEach(processSide);
 
-  if (snapshot) {
+  if (typeof snapshot !== 'boolean') {
     json.snapshot = true;
+  } else if (snapshot) {
+    json.snapshot = true;
+  } else {
+    delete json.snapshot;
   }
 
   if (book.both) {
     json.both = true;
   }
 
-  this.message.books.push(json);
+  this.message.books = (this.message.books || []).concat(json);
+
+  return this;
+};
+
+Request.prototype.addStream = function(stream, values) {
+  var self = this;
+
+  if (Array.isArray(values)) {
+    switch (stream) {
+      case 'accounts':
+        this.addAccount(values);
+        break;
+      case 'accounts_proposed':
+        this.addAccountProposed(values);
+        break;
+      case 'books':
+        this.addBook(values);
+        break;
+    }
+  } else if (arguments.length > 1) {
+    for (arg in arguments) {
+      this.addStream(arguments[arg]);
+    }
+    return;
+  }
+
+  if (!Array.isArray(this.message.streams)) {
+    this.message.streams = [ ];
+  }
+
+  if (this.message.streams.indexOf(stream) === -1) {
+    this.message.streams.push(stream);
+  }
+
+  return this;
 };
 
 exports.Request = Request;

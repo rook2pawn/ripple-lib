@@ -123,13 +123,14 @@ function Server(remote, opts) {
     self._updateScore('loadchange', load);
   });
 
-  this.once('response_server_info', function(message) {
-    if (message.info.hostid) {
-      self._hostid = message.info.hostid;
+  this.on('response_server_info', function(message) {
+    try {
+      self._hostid = '(' +  message.info.pubkey_node + ')';
+    } catch (e) {
     }
   });
 
-  this.once('connect', function() {
+  this.on('connect', function() {
     self._request(self._remote.requestServerInfo());
   });
 };
@@ -180,7 +181,7 @@ Server.websocketConstructor = function() {
 Server.prototype._setState = function(state) {
   if (state !== this._state) {
     if (this._remote.trace) {
-      log.info('set_state:', this._hostid, state);
+      log.info('set_state:', this._opts.url, this._hostid, state);
     }
 
     this._state = state;
@@ -189,6 +190,7 @@ Server.prototype._setState = function(state) {
     switch (state) {
       case 'online':
         this._connected = true;
+        this._retry = 0;
         this.emit('connect');
         break;
       case 'offline':
@@ -300,8 +302,24 @@ Server.prototype.getHostID = function() {
  */
 
 Server.prototype.disconnect = function() {
+  var self = this;
+
+  if (!this._connected) {
+    this.once('socket_open', function() {
+      self.disconnect();
+    });
+    return;
+  }
+
+  //these need to be reset so that updateScore 
+  //and checkActivity do not trigger reconnect
+  this._lastLedgerIndex = NaN;
+  this._lastLedgerClose = NaN;
+  this._score = 0;
+  
   this._shouldConnect = false;
   this._setState('offline');
+
   if (this._ws) {
     this._ws.close();
   }
@@ -316,13 +334,19 @@ Server.prototype.disconnect = function() {
 Server.prototype.reconnect = function() {
   var self = this;
 
-  function disconnected() {
+  function reconnect() {
+    self._shouldConnect = true;
+    self._retry = 0;
     self.connect();
   };
 
-  if (this._ws) {
-    this.once('disconnect', disconnected);
-    this.disconnect();
+  if (this._ws && this._shouldConnect) {
+    if (this._connected) {
+      this.once('disconnect', reconnect);
+      this.disconnect();
+    } else  {
+    reconnect();
+    }
   }
 };
 
@@ -337,6 +361,12 @@ Server.prototype.reconnect = function() {
 Server.prototype.connect = function() {
   var self = this;
 
+  var WebSocket = Server.websocketConstructor();
+
+  if (!WebSocket) {
+    throw new Error('No websocket support detected!');
+  }
+
   // We don't connect if we believe we're already connected. This means we have
   // recently received a message from the server and the WebSocket has not
   // reported any issues either. If we do fail to ping or the connection drops,
@@ -345,19 +375,13 @@ Server.prototype.connect = function() {
     return;
   }
 
-  if (this._remote.trace) {
-    log.info('connect:', this._hostid, this._opts.url);
-  }
-
   // Ensure any existing socket is given the command to close first.
   if (this._ws) {
     this._ws.close();
   }
 
-  var WebSocket = Server.websocketConstructor();
-
-  if (!WebSocket) {
-    throw new Error('No websocket support detected!');
+  if (this._remote.trace) {
+    log.info('connect:', this._opts.url, this._hostid);
   }
 
   var ws = this._ws = new WebSocket(this._opts.url);
@@ -383,7 +407,7 @@ Server.prototype.connect = function() {
       self.emit('socket_error');
 
       if (self._remote.trace) {
-        log.info('onerror:', self._hostid, self._opts.url, e.data || e);
+        log.info('onerror:', self._opts.url, self._hostid, e.data || e);
       }
 
       // Most connection errors for WebSockets are conveyed as 'close' events with
@@ -407,7 +431,7 @@ Server.prototype.connect = function() {
   ws.onclose = function onClose() {
     if (ws === self._ws) {
       if (self._remote.trace) {
-        log.info('onclose:', self._hostid, self._opts.url, ws.readyState);
+        log.info('onclose:', self._opts.url, self._hostid, ws.readyState);
       }
       self._handleClose();
     }
@@ -440,7 +464,7 @@ Server.prototype._retryConnect = function() {
   function connectionRetry() {
     if (self._shouldConnect) {
       if (self._remote.trace) {
-        log.info('retry', self._hostid, self._opts.url);
+        log.info('retry', self._opts.url, self._hostid);
       }
       self.connect();
     }
@@ -459,15 +483,15 @@ Server.prototype._handleClose = function() {
   var self = this;
   var ws = this._ws;
 
-  this.emit('socket_close');
-  this._setState('offline');
-
   function noOp(){};
 
   // Prevent additional events from this socket
   ws.onopen = ws.onerror = ws.onclose = ws.onmessage = noOp;
 
-  if (self._shouldConnect) {
+  this.emit('socket_close');
+  this._setState('offline');
+
+  if (this._shouldConnect) {
     this._retryConnect();
   }
 };
@@ -546,14 +570,14 @@ Server.prototype._handleResponse = function(message) {
 
   if (!request) {
     if (this._remote.trace) {
-      log.info('UNEXPECTED:', this._hostid, this._opts.url, message);
+      log.info('UNEXPECTED:', this._opts.url, this._hostid, message);
     }
     return;
   }
 
   if (message.status === 'success') {
     if (this._remote.trace) {
-      log.info('response:', this._hostid, this._opts.url, message);
+      log.info('response:', this._opts.url, this._hostid, message);
     }
 
     var command = request.message.command;
@@ -567,7 +591,7 @@ Server.prototype._handleResponse = function(message) {
     });
   } else if (message.error) {
     if (this._remote.trace) {
-      log.info('error:', this._hostid, this._opts.url, message);
+      log.info('error:', this._opts.url, this._hostid,  message);
     }
 
     var error = {
@@ -582,7 +606,7 @@ Server.prototype._handleResponse = function(message) {
 
 Server.prototype._handlePathFind = function(message) {
   if (this._remote.trace) {
-    log.info('path_find:', this._hostid, this._opts.url, message);
+    log.info('path_find:', this._opts.url, this._hostid,  message);
   }
 };
 
@@ -640,7 +664,7 @@ Server.isLoadStatus = function(message) {
 Server.prototype._sendMessage = function(message) {
   if (this._ws) {
     if (this._remote.trace) {
-      log.info('request:', this._hostid, this._opts.url, message);
+      log.info('request:', this._opts.url, this._hostid, message);
     }
     this._ws.send(JSON.stringify(message));
   }
@@ -662,7 +686,7 @@ Server.prototype._request = function(request) {
   // Only bother if we are still connected.
   if (!this._ws) {
     if (this._remote.trace) {
-      log.info('request: DROPPING:', self._hostid, self._opts.url, request.message);
+      log.info('request: DROPPING:', self._opts.url, self._hostid, request.message);
     }
     return;
   }
@@ -680,15 +704,17 @@ Server.prototype._request = function(request) {
     self._sendMessage(request.message);
   };
 
-  var isSubscribeRequest = request && request.message.command === 'subscribe' && this._ws.readyState === 1;
+  var isOpen = this._ws.readyState === 1;
+  var isSubscribeRequest = request && request.message.command === 'subscribe';
 
-  if (this._isConnected() || isSubscribeRequest) {
+  if (this.isConnected() || (isOpen && isSubscribeRequest)) {
     sendRequest();
   } else {
     this.once('connect', sendRequest);
   }
 };
 
+Server.prototype.isConnected =
 Server.prototype._isConnected = function() {
   return this._connected;
 };

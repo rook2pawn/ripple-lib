@@ -13,24 +13,26 @@
 // YYY Will later provide js/network.js which will transparently use multiple
 // instances of this class for network access.
 
-var EventEmitter = require('events').EventEmitter;
-var util         = require('util');
-var LRU          = require('lru-cache');
-var Request      = require('./request').Request;
-var Server       = require('./server').Server;
-var Amount       = require('./amount').Amount;
-var Currency     = require('./currency').Currency;
-var UInt160      = require('./uint160').UInt160;
-var Transaction  = require('./transaction').Transaction;
-var Account      = require('./account').Account;
-var Meta         = require('./meta').Meta;
-var OrderBook    = require('./orderbook').OrderBook;
-var PathFind     = require('./pathfind').PathFind;
-var RippleError  = require('./rippleerror').RippleError;
-var utils        = require('./utils');
-var sjcl         = require('./utils').sjcl;
-var config       = require('./config');
-var log          = require('./log').internal.sub('remote');
+var EventEmitter     = require('events').EventEmitter;
+var util             = require('util');
+var LRU              = require('lru-cache');
+var Server           = require('./server').Server;
+var Request          = require('./request').Request;
+var Server           = require('./server').Server;
+var Amount           = require('./amount').Amount;
+var Currency         = require('./currency').Currency;
+var UInt160          = require('./uint160').UInt160;
+var Transaction      = require('./transaction').Transaction;
+var Account          = require('./account').Account;
+var Meta             = require('./meta').Meta;
+var OrderBook        = require('./orderbook').OrderBook;
+var PathFind         = require('./pathfind').PathFind;
+var SerializedObject = require('./serializedobject').SerializedObject;
+var RippleError      = require('./rippleerror').RippleError;
+var utils            = require('./utils');
+var sjcl             = require('./utils').sjcl;
+var config           = require('./config');
+var log              = require('./log').internal.sub('remote');
 
 /**
  *    Interface to manage the connection to a Ripple server.
@@ -101,9 +103,9 @@ function Remote(opts, trace) {
   this._transaction_subs = 0;
   this._connection_count = 0;
   this._connected = false;
+  this._should_connect = true;
 
-  this._connection_offset = 1000 * (typeof opts.connection_offset === 'number' ? opts.connection_offset : 0);
-  this._submission_timeout = 1000 * (typeof opts.submission_timeout === 'number' ? opts.submission_timeout : 10);
+  this._submission_timeout = 1000 * (typeof opts.submission_timeout === 'number' ? opts.submission_timeout : 20);
 
   this._received_tx = LRU({ max: 100 });
   this._cur_path_find = null;
@@ -143,10 +145,6 @@ function Remote(opts, trace) {
     }
   };
 
-  if (typeof this._connection_offset !== 'number') {
-    throw new TypeError('Remote "connection_offset" configuration is not a Number');
-  }
-
   if (typeof this._submission_timeout !== 'number') {
     throw new TypeError('Remote "submission_timeout" configuration is not a Number');
   }
@@ -184,7 +182,7 @@ function Remote(opts, trace) {
   }
 
   // Fallback for previous API
-  if (!opts.hasOwnProperty('servers') && opts.websocket_ip) {
+  if (!opts.hasOwnProperty('servers') && opts.hasOwnProperty('websocket_ip')) {
     opts.servers = [
       {
         host:     opts.websocket_ip,
@@ -196,10 +194,7 @@ function Remote(opts, trace) {
   }
 
   (opts.servers || []).forEach(function(server) {
-    var pool = Number(server.pool) || 1;
-    while (pool--) {
-      self.addServer(server);
-    };
+    self.addServer(server);
   });
 
   // This is used to remove Node EventEmitter warnings
@@ -239,15 +234,31 @@ function Remote(opts, trace) {
   }
 
   function pingServers() {
-    var pingRequest = self.requestPing();
-    pingRequest.on('error', function(){});
-    pingRequest.broadcast();
+    self._pingInterval = setInterval(function() {
+      var pingRequest = self.requestPing();
+      pingRequest.on('error', function(){});
+      pingRequest.broadcast();
+    }, opts.ping * 1000);
   };
 
   if (opts.ping) {
-    this.once('connect', function() {
-      self._pingInterval = setInterval(pingServers, opts.ping * 1000);
-    });
+    this.once('connect', pingServers);
+  }
+
+  function reconnect() {
+    self.reconnect();
+  };
+
+  //if we are using a browser, reconnect
+  //the servers whenever the network comes online
+  if (typeof window !== 'undefined') {
+    if (window.addEventListener) {
+      // W3C DOM
+      window.addEventListener('online', reconnect);
+    } else if (window.attachEvent) {
+      // IE DOM
+      window.attachEvent('ononline', reconnect);
+    }
   }
 };
 
@@ -427,13 +438,14 @@ Remote.prototype.getPendingTransactions = function() {
     var transaction = self.transaction();
     transaction.parseJson(tx.tx_json);
     transaction.clientID(tx.clientID);
+
     Object.keys(tx).forEach(function(prop) {
       switch (prop) {
         case 'secret':
-          case 'submittedIDs':
-          case 'submitIndex':
+        case 'submittedIDs':
+        case 'submitIndex':
           transaction[prop] = tx[prop];
-        break;
+          break;
       }
     });
 
@@ -489,7 +501,30 @@ Remote.prototype.addServer = function(opts) {
 };
 
 /**
- * Connect to the Ripple network.
+ * Reconnect to Ripple network
+ */
+
+Remote.prototype.reconnect = function() {
+  var self = this;
+
+  if (!this._should_connect) {
+    return;
+  }
+
+  log.info('reconnecting');
+
+  ;(function nextServer(i) {
+    self._servers[i].reconnect();
+    if (++i < self._servers.length) {
+      nextServer(i);
+    }
+  })(0);
+
+  return this;
+};
+
+/**
+ * Connect to the Ripple network
  *
  * @param {Function} callback
  * @api public
@@ -515,11 +550,12 @@ Remote.prototype.connect = function(online) {
 
   var self = this;
 
+  this._should_connect = true;
+
   ;(function nextServer(i) {
     self._servers[i].connect();
-    var next = nextServer.bind(this, ++i);
-    if (i < self._servers.length) {
-      setTimeout(next, self._connection_offset);
+    if (++i < self._servers.length) {
+      nextServer(i);
     }
   })(0);
 
@@ -541,6 +577,8 @@ Remote.prototype.disconnect = function(callback) {
   if (typeof callback === 'function') {
     this.once('disconnect', callback);
   }
+
+  this._should_connect = false;
 
   this._servers.forEach(function(server) {
     server.disconnect();
@@ -742,8 +780,14 @@ Remote.prototype.setPrimaryServer = function(server) {
 
 Remote.prototype._getServer =
 Remote.prototype.getServer = function() {
+  var result = void(0);
+
   if (this._primary_server && this._primary_server._connected) {
     return this._primary_server;
+  }
+
+  if (!this._servers.length) {
+    return result;
   }
 
   function sortByScore(a, b) {
@@ -761,14 +805,16 @@ Remote.prototype.getServer = function() {
   // Sort servers by score
   this._servers.sort(sortByScore);
 
-  var index = 0;
-  var server = this._servers[index];
-
-  while (!server._connected) {
-    server = this._servers[++index];
+  // First connected server
+  for (var i=0; i<this._servers.length; i++) {
+    var server = this._servers[i];
+    if ((server instanceof Server) && server._connected) {
+      result = server;
+      break;
+    }
   }
 
-  return server;
+  return result;
 };
 
 /**
@@ -1284,7 +1330,7 @@ Remote.prototype.requestAccountTx = function(options, callback) {
       case 'forward':           //false
       case 'marker':
         request.message[o] = this[o];
-      break;
+        break;
     }
   }, options);
 
@@ -1297,8 +1343,6 @@ Remote.prototype.requestAccountTx = function(options, callback) {
       return result;
     };
   };
-
-  var SerializedObject = require('./serializedobject').SerializedObject;
 
   function parseBinaryTransaction(transaction) {
     var tx = { validated: transaction.validated };
@@ -1396,6 +1440,7 @@ Remote.prototype.requestAccountTx = function(options, callback) {
  * @return {Request}
  */
 
+Remote.prototype.requestTransactionHistory =
 Remote.prototype.requestTxHistory = function(start, callback) {
   // XXX Does this require the server to be trusted?
   //utils.assert(this.trusted);
@@ -1827,6 +1872,7 @@ Remote.prototype.getAccountSequence = function(account, advance) {
  * @param {Number} sequence
  */
 
+Remote.prototype.setAccountSequence =
 Remote.prototype.setAccountSeq = function(account, sequence) {
   var account = UInt160.json_rewrite(account);
 
@@ -1935,26 +1981,25 @@ Remote.prototype.requestRippleBalance = function(account, issuer, currency, ledg
   request.ledgerChoose(ledger);
 
   function rippleState(message) {
-    var node            = message.node;
-    var lowLimit        = Amount.from_json(node.LowLimit);
-    var highLimit       = Amount.from_json(node.HighLimit);
+    var node = message.node;
+    var lowLimit = Amount.from_json(node.LowLimit);
+    var highLimit = Amount.from_json(node.HighLimit);
+
     // The amount the low account holds of issuer.
-    var balance         = Amount.from_json(node.Balance);
+    var balance = Amount.from_json(node.Balance);
+
     // accountHigh implies: for account: balance is negated, highLimit is the limit set by account.
-    var accountHigh     = UInt160.from_json(account).equals(highLimit.issuer());
+    var accountHigh = UInt160.from_json(account).equals(highLimit.issuer());
 
     request.emit('ripple_state', {
-      account_balance     : ( accountHigh ? balance.negate() : balance.clone()).parse_issuer(account),
-      peer_balance        : (!accountHigh ? balance.negate() : balance.clone()).parse_issuer(issuer),
-
-      account_limit       : ( accountHigh ? highLimit : lowLimit).clone().parse_issuer(issuer),
-      peer_limit          : (!accountHigh ? highLimit : lowLimit).clone().parse_issuer(account),
-
-      account_quality_in  : ( accountHigh ? node.HighQualityIn : node.LowQualityIn),
-      peer_quality_in     : (!accountHigh ? node.HighQualityIn : node.LowQualityIn),
-
-      account_quality_out : ( accountHigh ? node.HighQualityOut : node.LowQualityOut),
-      peer_quality_out    : (!accountHigh ? node.HighQualityOut : node.LowQualityOut),
+      account_balance:      ( accountHigh ? balance.negate() :     balance.clone()).parse_issuer(account),
+      peer_balance:         (!accountHigh ? balance.negate() :     balance.clone()).parse_issuer(issuer),
+      account_limit:        ( accountHigh ? highLimit :            lowLimit).clone().parse_issuer(issuer),
+      peer_limit:           (!accountHigh ? highLimit :            lowLimit).clone().parse_issuer(account),
+      account_quality_in:   ( accountHigh ? node.HighQualityIn :   node.LowQualityIn),
+      peer_quality_in:      (!accountHigh ? node.HighQualityIn :   node.LowQualityIn),
+      account_quality_out:  ( accountHigh ? node.HighQualityOut :  node.LowQualityOut),
+      peer_quality_out:     (!accountHigh ? node.HighQualityOut :  node.LowQualityOut),
     });
   };
 
