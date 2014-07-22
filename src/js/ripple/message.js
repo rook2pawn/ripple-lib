@@ -165,7 +165,7 @@ console.log("verifyHashSignature_RPC:",data)
             console.log('getInfo_RPC err:', err)
             console.log('getInfo_RPC resp:', body)
             if (body === undefined) {
-                console.log("RPC failure no body", resp.statusCode) 
+                console.log("RPC failure no body") 
                 async_callback('no response',null)
             } else if (body.result.error == 'actNotFound') {
                 console.log("RPC actNotFound")
