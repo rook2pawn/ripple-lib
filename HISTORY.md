@@ -1,3 +1,36 @@
+##0.8.0
+
++ Orderbook: Added tracking of offer funds for determining when offers are not funded
+
++ Orderbook: Added tests
+
++ Transactions: If transaction errs with `tefALREADY`, wait until all possible submissions err with the same before emitting `error`. Fixes a client "Transaction malformed" bug.
+
++ Transactions: Track submissions, don't bother submitting to unconnected servers
+
++ Request: `request.request()` now accepts an array of servers as first argument. Servers can be represented with URL, or the server object itself.
+
++ Request: `request.broadcast()` now returns the number of servers request was sent to
+
++ Server: Acquire host information from server without additional request
+
+##0.7.39
+
++ Improvements to multi-server support. Fixed an issue where a server's score was not reset and connections would keep dropping after being connected for a significant amount of time.
+
++ Improvements in order book support. Added support for currency pairs with interest bearing currencies. You can request an order book with hex, ISO code or full name for the currency.
+
++ Fix value parsing for amount/currency order pairs, e.g. `Amount.from_human("XAU 12345.6789")`
+
++ Improved Amount parsing from human readable string given a hex currency, e.g. `Amount.from_human("10 015841551A748AD2C1F76FF6ECB0CCCD00000000")`
+
++ Improvements to username normalization in the vault client
+
++ Add 2-factor authentication support for vault client
+
++ Removed vestiges of Grunt, switched to Gulp
+
+
 ##0.7.37
 
 + **Deprecations**
