@@ -1,8 +1,22 @@
+##0.8.1
+
++ Wallet: Add Wallet class that generates wallets
+
++ Make npm test runnable in Windows.
+
++ Fix several stability issues, see merged PR's for details
+
++ Fix bug in Amount.to_human_full()
+
++ Fix undefined fee states when connecting to a rippled that is syncing
+
 ##0.8.0
 
 + Orderbook: Added tracking of offer funds for determining when offers are not funded
 
 + Orderbook: Added tests
+
++ Orderbook: Update owner funds
 
 + Transactions: If transaction errs with `tefALREADY`, wait until all possible submissions err with the same before emitting `error`. Fixes a client "Transaction malformed" bug.
 
@@ -13,6 +27,11 @@
 + Request: `request.broadcast()` now returns the number of servers request was sent to
 
 + Server: Acquire host information from server without additional request
+
++ Amount: Add a constant for the maximum canonical value that can be expressed as a Ripple value
+
++ Amount: Make Constants static fields on the class, instead of a seperate export
+
 
 ##0.7.39
 
