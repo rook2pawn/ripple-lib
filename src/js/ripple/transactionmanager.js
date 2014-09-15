@@ -242,6 +242,7 @@ TransactionManager.prototype._fillSequence = function(tx, callback) {
 };
 
 TransactionManager.prototype._loadSequence = function(callback) {
+    console.log("ripple-lib:transactionmanager:loadSequence")
   var self = this;
 
   function sequenceLoaded(err, sequence) {
@@ -610,6 +611,7 @@ TransactionManager._isTooBusy = function(error) {
  */
 
 TransactionManager.prototype.submit = function(tx) {
+  console.log("ripple-lib:transactionManager:submit:")
   var self = this;
   var remote = this._remote;
 

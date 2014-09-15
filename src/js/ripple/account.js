@@ -135,25 +135,6 @@ Account.prototype.getInfo = function(callback) {
   return this._remote.request_account_info(this._account_id, callback);
 };
 
-
-Account.prototype.getInfo_RPC = function(callback) {
-  request.post({url:'http://s1.ripple.com:51234',json:{
-    method:'account_info',
-    params: [{'account':this._account_id}]
-  }},function(err, resp, body) {
-    console.log('getInfo_RPC err:', err)
-    console.log('getInfo_RPC resp:', body)
-    if (body === undefined) {
-        console.log("RPC failure no body", resp) 
-        callback({remote:{error:'no response'}},null)
-    } else if (body.result.error) {
-        callback({remote:{error:body.result.error}},null)
-    } else {
-        callback(null, body.result)
-    }
-  })
-};
-
 /**
  * Retrieve the current AccountRoot entry.
  *
@@ -334,8 +315,7 @@ Account.prototype.publicKeyIsActive = function(public_key, callback) {
   }
 
   function getAccountInfo(async_callback) {
-    self.getInfo_RPC(function(err, account_info_res){
-        console.log("getinfo rpc response: ", arguments)
+    self.getInfo(function(err, account_info_res){
 
       // If the remote responds with an Account Not Found error then the account
       // is unfunded and thus we can assume that the master key is active
@@ -348,7 +328,6 @@ Account.prototype.publicKeyIsActive = function(public_key, callback) {
   };
 
   function publicKeyIsValid(account_info_res, async_callback) {
-    console.log("publicKeyisvalid args:", arguments)
     // Catch the case of unfunded accounts
     if (!account_info_res) {
 
@@ -415,4 +394,3 @@ Account._publicKeyToAddress = function(public_key) {
 exports.Account = Account;
 
 // vim:sw=2:sts=2:ts=8:et
-

@@ -875,6 +875,7 @@ Transaction.prototype.rippleLineSet = function(src, limit, quality_in, quality_o
 
 // Submit a transaction to the network.
 Transaction.prototype.submit = function(callback) {
+    console.log("ripple-lib:submit")
   var self = this;
 
   this.callback = (typeof callback === 'function') ? callback : function(){};
@@ -902,6 +903,7 @@ Transaction.prototype.submit = function(callback) {
     return this.emit('error', new RippleError('tejInvalidAccount', 'Account is missing or invalid'));
   }
 
+  console.log("calling remote account submit")
   // YYY Might check paths for invalid accounts.
   this.remote.account(account).submit(this);
 

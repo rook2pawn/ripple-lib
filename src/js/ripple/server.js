@@ -87,6 +87,7 @@ function Server(remote, opts) {
       + this._opts.host + ':' + this._opts.port;
 
   this.on('message', function onMessage(message) {
+    console.log("Getting message and delegating to handleMessage",message)
     self._handleMessage(message);
   });
 
@@ -513,6 +514,7 @@ Server.prototype._handleClose = function() {
  */
 
 Server.prototype._handleMessage = function(message) {
+  console.log("ripple-lib:server:_handleMessage")
   var self = this;
 
   try {
@@ -525,8 +527,10 @@ Server.prototype._handleMessage = function(message) {
     return;
   }
 
+  console.log("ripple-lib:server:_handleMessage:message.type:",message.type)
   switch (message.type) {
     case 'ledgerClosed':
+      console.log("ripple-lib:server:calling HandleLedgerClosed")
       this._handleLedgerClosed(message);
       break;
     case 'serverStatus':
@@ -542,6 +546,7 @@ Server.prototype._handleMessage = function(message) {
 };
 
 Server.prototype._handleLedgerClosed = function(message) {
+  console.log("ripple-lib:server:handleLedgerClosed", message.ledger_index)
   this._lastLedgerIndex = message.ledger_index;
   this._lastLedgerClose = Date.now();
   this.emit('ledger_closed', message);

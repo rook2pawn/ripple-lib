@@ -471,6 +471,7 @@ Remote.prototype.addServer = function(opts) {
   server.on('message', serverMessage);
 
   function serverConnect() {
+    console.log("ServerConnect!")
     self._connection_count += 1;
 
     if (opts.primary) {
@@ -657,12 +658,14 @@ Remote.prototype._handleLedgerClosed = function(message) {
     this._ledger_time = message.ledger_time;
     this._ledger_hash = message.ledger_hash;
     this._ledger_current_index = message.ledger_index + 1;
-
+    // REST and lib have a different meaning of connected
     if (this.isConnected()) {
+      console.log("\n\n\n1.IS CONNECTED .. MESSAGE:", message)
       this.emit('ledger_closed', message);
     } else {
       this.once('connect', function() {
         // Delay until server is 'online'
+        console.log("\n\n\n2. IS CONNECTED .. MESSAGE:", message)
         self.emit('ledger_closed', message);
       });
     }
@@ -1612,7 +1615,7 @@ Remote.prototype._serverPrepareSubscribe = function(callback) {
 
       self.emit('random', utils.hexToArray(message.random));
     }
-
+    console.log("ripple-lib:serverSubscribed:message:",message)
     self._handleLedgerClosed(message);
 
     self.emit('subscribed');
